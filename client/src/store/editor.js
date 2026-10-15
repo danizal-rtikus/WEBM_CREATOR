@@ -22,6 +22,8 @@ export const useEditor = createStore((set, get) => ({
   toast: null,
   exportOpen: false,
   inspectorTab: 'layer', // layer | motion | project
+  backendMode: null, // 'server' | 'browser'
+  projectIOOpen: false,
 
   // ---------- Riwayat ----------
   /** Ubah proyek + catat ke riwayat. fn menerima draft (salinan) proyek. */

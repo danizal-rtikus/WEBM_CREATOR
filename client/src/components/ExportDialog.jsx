@@ -20,45 +20,9 @@ export default function ExportDialog() {
   const cut = project.settings.cutPoint;
   const cutMs = cut != null && cut < renderDur ? Math.round(cut * 1000) : null;
   const [job, setJob] = useState(null);
-  const esRef = useRef(null);
-
-  const pollRef = useRef(null);
-  useEffect(
-    () => () => {
-      if (esRef.current) esRef.current.close();
-      clearInterval(pollRef.current);
-    },
-    [],
-  );
-
-  const finished = (s) => s === 'done' || s === 'failed' || s === 'canceled';
-
-  // Cadangan jika koneksi SSE putus: tanya status tiap detik
-  const startPolling = (id) => {
-    clearInterval(pollRef.current);
-    let misses = 0;
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/renders/${id}`);
-        if (res.status === 404) {
-          clearInterval(pollRef.current);
-          setJob({ status: 'failed', error: 'Job hilang — server API kemungkinan restart/crash. Lihat jendela terminal "npm run dev" untuk pesan error, lalu coba lagi.' });
-          return;
-        }
-        if (!res.ok) throw new Error(String(res.status));
-        misses = 0;
-        const data = await res.json();
-        setJob(data);
-        if (finished(data.status)) clearInterval(pollRef.current);
-      } catch {
-        misses += 1;
-        if (misses >= 8) {
-          clearInterval(pollRef.current);
-          setJob({ status: 'failed', error: 'Server API (port 3001) tidak merespons. Periksa jendela terminal "npm run dev" — kemungkinan server berhenti karena error.' });
-        }
-      }
-    }, 1000);
-  };
+  const unsubRef = useRef(null);
+  useEffect(() => () => unsubRef.current && unsubRef.current(), []);
+  const browserMode = useEditor((s) => s.backendMode) === 'browser';
 
   const close = () => useEditor.setState({ exportOpen: false });
   const busy = job && ['queued', 'preparing', 'rendering', 'muxing'].includes(job.status);
@@ -69,15 +33,8 @@ export default function ExportDialog() {
     try {
       const j = await api.startRender({ projectId: project.id, ...opts, end: renderDur, cutMs: cutMs || undefined });
       setJob(j);
-      const es = api.renderEvents(j.id);
-      esRef.current = es;
-      es.onmessage = (ev) => {
-        const data = JSON.parse(ev.data);
-        setJob(data);
-        if (finished(data.status)) es.close();
-      };
-      es.onerror = () => es.close(); // polling tetap berjalan sebagai cadangan
-      startPolling(j.id);
+      if (unsubRef.current) unsubRef.current();
+      unsubRef.current = api.subscribeRender(j.id, (data) => setJob((cur) => ({ ...(cur || {}), ...data })));
     } catch (e) {
       setJob({ status: 'failed', error: e.message });
     }
@@ -131,6 +88,11 @@ export default function ExportDialog() {
                 Latar transparan (VP9 + alpha, untuk overlay di OBS / web)
               </label>
             </div>
+            {browserMode && (
+              <p className="muted small">
+                Render berjalan di browser ini (WebCodecs) — biarkan tab tetap terbuka &amp; aktif sampai selesai.
+              </p>
+            )}
             <p className="muted small">
               {outW}×{outH} · {fps} fps · {renderDur.toFixed(2)} detik · {Math.round(renderDur * fps)} frame · VP9 + Opus
             </p>
@@ -149,7 +111,7 @@ export default function ExportDialog() {
           </>
         ) : (
           <RenderProgress job={job} cutMs={cutMs} onCancel={() => api.cancelRender(job.id).catch((e) => {
-            clearInterval(pollRef.current);
+            if (unsubRef.current) unsubRef.current();
             setJob({ status: 'failed', error: `Tidak bisa membatalkan: ${e.message}. Server API kemungkinan restart — jalankan ulang "npm run dev" lalu coba lagi.` });
           })} onClose={close} onAgain={() => setJob(null)} />
         )}
@@ -190,7 +152,7 @@ function RenderProgress({ job, cutMs, onCancel, onClose, onAgain }) {
           )}
           <div className="modal-actions">
             <button className="btn ghost" onClick={onAgain}>Render lagi</button>
-            <a className="btn primary" href={`${job.url}?download=1`} download={job.fileName}>Unduh .webm</a>
+            <a className="btn primary" href={job.downloadUrl || `${job.url}?download=1`} download={job.fileName}>Unduh .webm</a>
             <button className="btn" onClick={onClose}>Tutup</button>
           </div>
         </>

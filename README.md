@@ -1,7 +1,14 @@
 # WEBM Editor
 
 Editor video berlayer di browser untuk membuat animasi pendek, overlay, dan animasi logo, lalu mengekspornya sebagai **WebM (VP9 + Opus)**, termasuk opsi **latar transparan (alpha)**.
-Semuanya berjalan di PC sendiri (localhost). Aset dan hasil render disimpan di disk lokal.
+Bisa dipakai dengan dua cara, dan aplikasi memilih sendiri secara otomatis:
+
+| Mode | Kapan | Data disimpan di | Render |
+| --- | --- | --- | --- |
+| **Server lokal** | `npm run dev` / `npm start` di PC sendiri | Folder `data/` di disk | Chromium headless + FFmpeg |
+| **Browser** | Situs statis, mis. di-deploy ke **Vercel** | IndexedDB di browser masing-masing pengguna | WebCodecs (VP9 + alpha, Opus) di browser |
+
+Penanda mode tampil di bilah atas (**● Server lokal** / **● Tersimpan di browser**). Tambahkan `?mode=browser` ke URL untuk memaksa mode browser walau server lokal menyala.
 
 - **Frontend:** Vite + React (tanpa library state, cukup store kecil di `client/src/store`)
 - **Backend:** Node.js murni (modul bawaan, tanpa Express) + FFmpeg
@@ -36,6 +43,36 @@ Data tersimpan di folder `data/`:
 | `data/media/` | Aset yang di-upload, thumbnail, salinan VP9 untuk render |
 | `data/renders/` | Hasil export `.webm` |
 | `data/assets.json` | Daftar media library |
+
+## Deploy ke Vercel (mode browser)
+
+Di Vercel tidak ada server Node.js/FFmpeg yang permanen, jadi aplikasi otomatis berjalan dalam **mode browser**: setiap pengunjung punya proyek & media sendiri yang tersimpan di browser mereka. Tidak ada data yang dikirim ke server.
+
+1. Push repo ke GitHub.
+2. Di [vercel.com/new](https://vercel.com/new), impor repo tersebut.
+3. **Root Directory: `client`** (penting — supaya Vercel tidak memasang Puppeteer dari folder `server`).
+   Framework, build command, dan output (`dist`) sudah diatur oleh `client/vercel.json`.
+4. Klik **Deploy**. Setiap `git push` berikutnya otomatis ter-deploy ulang.
+
+Yang perlu diketahui pengguna mode browser:
+
+- **Browser yang didukung untuk render:** Chrome / Edge desktop versi terbaru (butuh WebCodecs). Firefox & Safari bisa mengedit, tetapi render bisa gagal.
+- Data hanya ada di browser & perangkat itu. Menghapus data situs / mode Incognito = proyek hilang. Gunakan **Proyek ▸ Export proyek** untuk cadangan.
+- Render berjalan di tab itu sendiri: biarkan tab tetap terbuka dan aktif sampai selesai.
+- Video yang di-upload harus bisa diputar browser (MP4 H.264 atau WebM). Tidak ada konversi otomatis seperti di mode server lokal.
+- SFX bawaan dibuat langsung di browser (Web Audio), jadi bunyinya sedikit berbeda dari versi FFmpeg.
+
+## Export / import proyek
+
+**Proyek ▾ ▸ Export proyek (JSON / ZIP)…** berlaku di kedua mode:
+
+| Format | Isi | Cocok untuk |
+| --- | --- | --- |
+| JSON + media tertanam (default) | Satu `.webm-project.json` berisi proyek dan media (base64) | Paling mudah dipindah; ada peringatan bila media > 50 MB |
+| ZIP | `project.json` + folder `media/` | Proyek dengan video besar |
+| JSON saja | Struktur proyek tanpa media | Cadangan kecil; media harus sudah ada di perangkat tujuan |
+
+**Proyek ▾ ▸ Import proyek…** menerima `.json` atau `.zip` tersebut (juga file JSON mentah dari `data/projects/`). Proyek diimpor sebagai proyek baru; id media disesuaikan otomatis, dan media yang sudah ada tidak diduplikasi. Jadi proyek bisa dipindah dari server lokal ke versi Vercel dan sebaliknya.
 
 ## Fitur
 
@@ -136,7 +173,11 @@ client/                 Vite + React
   render.html           halaman render headless
   src/engine/           evaluate (keyframe), easing, compositor, preset logo, media pool
   src/store/            state editor + undo/redo + autosave
-  src/components/       TopBar, MediaLibrary, PreviewCanvas, Inspector, Timeline, ExportDialog
+  src/components/       TopBar, MediaLibrary, PreviewCanvas, Inspector, Timeline, ExportDialog, ProjectIODialog
+  src/api.js            facade: pilih backend server lokal atau browser secara otomatis
+  src/backend/          server.js (REST), browser.js (IndexedDB), render-browser.js (WebCodecs),
+                        webm-writer.js (muxer WebM + alpha), portable.js (export/import JSON/ZIP), sfx.js
+  vercel.json           konfigurasi deploy Vercel (Root Directory = client)
 server/
   src/index.js          HTTP server + routing + file statis (dengan Range)
   src/storage.js        proyek & aset (JSON)
@@ -148,4 +189,6 @@ server/
 
 - **`npm install` gagal saat mengunduh Chromium:** jalankan `set PUPPETEER_SKIP_DOWNLOAD=1` (CMD) atau `$env:PUPPETEER_SKIP_DOWNLOAD=1` (PowerShell), lalu `npm install`, lalu set `PUPPETEER_EXECUTABLE_PATH` ke Chrome Anda, misalnya `C:\Program Files\Google\Chrome\Application\chrome.exe`.
 - **Render gagal "Halaman render tidak siap":** pastikan `npm run dev` berjalan lengkap (API dan web), atau gunakan `npm start`.
+- **Mode browser: "Browser ini belum mendukung WebCodecs":** buka di Chrome atau Edge desktop terbaru.
+- **Mode browser: video tidak bisa di-upload:** ubah dulu ke MP4 (H.264) atau WebM, misalnya dengan HandBrake.
 - **Font teks tidak sesuai di hasil render:** font diambil dari Google Fonts, jadi butuh koneksi internet saat render.

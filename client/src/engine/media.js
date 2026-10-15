@@ -1,5 +1,6 @@
 // Pengelola elemen media (gambar, video, audio) untuk pratinjau dan render.
 import { fxAssets } from './fx/index.js';
+import { api } from '../api.js';
 
 export class MediaPool {
   constructor({ onChange, exact = false } = {}) {
@@ -79,6 +80,7 @@ export class MediaPool {
 
   async useProxy(v, asset) {
     try {
+      if (!api.ready || !api.capabilities.renderProxy) return; // mode browser: tidak ada transcoder
       let url = asset.renderUrl;
       if (!url) {
         const res = await fetch(`/api/assets/${asset.id}/proxy`, { method: 'POST' });

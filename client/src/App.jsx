@@ -8,9 +8,12 @@ import Inspector from './components/Inspector.jsx';
 import Timeline from './components/Timeline.jsx';
 import ExportDialog from './components/ExportDialog.jsx';
 import Toast from './components/Toast.jsx';
+import ProjectIODialog from './components/ProjectIODialog.jsx';
+import { initBackend } from './api.js';
 
 export default function App() {
   const exportOpen = useEditor((s) => s.exportOpen);
+  const projectIOOpen = useEditor((s) => s.projectIOOpen);
   const project = useEditor((s) => s.project);
   const assets = useEditor((s) => s.assets);
   const pool = useMemo(() => new MediaPool({ onChange: () => window.dispatchEvent(new Event('media-change')) }), []);
@@ -20,6 +23,8 @@ export default function App() {
     (async () => {
       const st = useEditor.getState();
       try {
+        const b = await initBackend();
+        useEditor.setState({ backendMode: b.mode });
         await st.loadAssets();
         const list = await st.loadProjects();
         let last = null;
@@ -27,8 +32,13 @@ export default function App() {
         const target = list.find((p) => p.id === last) || list[0];
         if (target) await st.openProject(target.id);
         else await st.createProject('Proyek pertama');
+        if (b.mode === 'browser') {
+          let seen = null;
+          try { seen = localStorage.getItem('webm-editor:browser-intro'); localStorage.setItem('webm-editor:browser-intro', '1'); } catch { /* noop */ }
+          if (!seen) st.notify('Proyek & media kamu tersimpan di browser ini saja. Export proyek (menu Proyek) untuk cadangan atau pindah perangkat.');
+        }
       } catch (e) {
-        st.notify(`Tidak bisa terhubung ke server lokal: ${e.message}`);
+        st.notify(`Gagal memuat data: ${e.message}`);
       }
     })();
   }, []);
@@ -49,6 +59,7 @@ export default function App() {
       <Inspector pool={pool} />
       <Timeline />
       {exportOpen && <ExportDialog />}
+      {projectIOOpen && <ProjectIODialog />}
       <Toast />
     </div>
   );

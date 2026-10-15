@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store/editor.js';
 import { api } from '../api.js';
+import { importProject } from '../backend/portable.js';
+import { fmtBytes } from '../util.js';
 
 const SAVE_LABEL = { saved: 'Tersimpan', dirty: 'Belum tersimpan', saving: 'Menyimpan…', error: 'Gagal simpan' };
 
@@ -34,12 +36,31 @@ export default function TopBar() {
         <button className="btn icon" disabled={!canRedo} onClick={() => useEditor.getState().redo()} title="Redo (Ctrl+Shift+Z)">↷</button>
       </div>
       <span className={`save-state ${saveState}`}>{SAVE_LABEL[saveState]}</span>
+      <ModeBadge />
       <div className="spacer" />
       <span className="hint">Spasi play · S split · Alt+K keyframe · Del hapus</span>
       <button className="btn primary" onClick={() => useEditor.setState({ exportOpen: true, playing: false })}>
         Export WebM
       </button>
     </header>
+  );
+}
+
+function ModeBadge() {
+  const mode = useEditor((s) => s.backendMode);
+  const [usage, setUsage] = useState(null);
+  useEffect(() => {
+    if (mode === 'browser' && api.storageEstimate) api.storageEstimate().then(setUsage);
+  }, [mode]);
+  if (!mode) return null;
+  const tip =
+    mode === 'browser'
+      ? `Proyek & media disimpan di browser ini (IndexedDB), tidak dikirim ke server mana pun.${usage ? ` Terpakai ${fmtBytes(usage.usage || 0)} dari ±${fmtBytes(usage.quota || 0)}.` : ''} Gunakan Proyek ▸ Export proyek untuk cadangan / pindah perangkat.`
+      : 'Terhubung ke server lokal (Node.js + FFmpeg). Proyek & media disimpan di folder data/.';
+  return (
+    <span className={`mode-badge ${mode}`} title={tip}>
+      {mode === 'browser' ? '● Tersimpan di browser' : '● Server lokal'}
+    </span>
   );
 }
 
@@ -76,9 +97,34 @@ function ProjectMenu({ onClose }) {
     useEditor.getState().loadProjects();
   };
 
+  const fileRef = useRef(null);
+  const doImport = async (file) => {
+    if (!file) return;
+    const st = useEditor.getState();
+    try {
+      if (st.saveState === 'dirty') await st.save();
+      st.notify('Mengimpor proyek…');
+      const res = await importProject(api, file);
+      await st.loadAssets();
+      await st.loadProjects();
+      await st.openProject(res.project.id);
+      st.notify(
+        res.missing.length
+          ? `Proyek diimpor, tetapi ${res.missing.length} media tidak ikut di file (${res.missing.slice(0, 3).join(', ')}${res.missing.length > 3 ? ', …' : ''}). Upload ulang media tersebut.`
+          : `Proyek "${res.project.name}" berhasil diimpor${res.added ? ` (${res.added} media)` : ''}.`,
+      );
+      onClose();
+    } catch (e) {
+      st.notify(`Import gagal: ${e.message}`);
+    }
+  };
+
   return (
     <div className="menu" ref={ref}>
       <button className="menu-item accent" onClick={create}>＋ Proyek baru</button>
+      <button className="menu-item" onClick={() => { useEditor.setState({ projectIOOpen: true }); onClose(); }}>⇩ Export proyek (JSON / ZIP)…</button>
+      <button className="menu-item" onClick={() => fileRef.current && fileRef.current.click()}>⇧ Import proyek…</button>
+      <input ref={fileRef} type="file" accept=".json,.zip,application/json,application/zip" hidden onChange={(e) => { doImport(e.target.files[0]); e.target.value = ''; }} />
       <div className="menu-sep" />
       {projects.map((p) => (
         <div key={p.id} className={`menu-item ${p.id === currentId ? 'active' : ''}`} onClick={() => open(p.id)}>
