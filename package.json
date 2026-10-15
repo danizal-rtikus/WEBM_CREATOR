@@ -1,0 +1,15 @@
+{
+  "name": "webm-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WEBM Editor - editor video berlayer dengan motion keyframe dan logo, export WebM (VP9 + alpha)",
+  "workspaces": ["client", "server"],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "start": "npm run build && npm run start -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
